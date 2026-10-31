@@ -1,68 +1,59 @@
-# 02 — Sistema de inventario y ventas
+# 02 — Sistema de inventario y ventas (Almacén Central)
 
-**Estado:** MVP local funcional implementado para práctica; no es una aplicación de producción.  
+**Estado:** Aplicación web moderna con Terminal Punto de Venta (TPV/POS) interactivo, módulo de compras con recepción física, alertas de reposición y Kardex en tiempo real.
 
-**Ejecución:** desde la raíz de Preparacion-7-Proyectos-Web-DotNet, ejecuta dotnet run --project .\02-Inventario-Ventas\InventarioVentas.csproj y abre http://localhost:5102. Contraseña de demostración: Demo123!. La persistencia usa EF Core InMemory por defecto; los perfiles y roles están en /api/auth/demo-users.
+**Ejecución:** desde la raíz de Preparacion-7-Proyectos-Web-DotNet, ejecuta `dotnet run --project .\02-Inventario-Ventas\InventarioVentas.csproj` y abre `http://localhost:5102`. Contraseña de demostración: `Demo123!`.
 
-**Objetivo:** administrar catálogo, almacenes, compras, ventas y movimientos de existencias con trazabilidad.
+---
 
-## Usuarios y permisos
+## Características de la Interfaz Moderna y Flujos Dinámicos
 
-- **Administrador:** configura usuarios, almacenes, catálogos e impuestos de demostración.
-- **Almacenero:** registra recepciones, ajustes autorizados y transferencias.
-- **Vendedor:** crea cotizaciones/ventas y consulta disponibilidad.
-- **Supervisor:** revisa reportes, anulaciones y movimientos de alto impacto.
+1. **Terminal Punto de Venta (POS) con Carrito en Vivo:**
+   - Catálogo interactivo de existencias con stock en tiempo real y badges de bajo mínimo.
+   - Carrito de compras multi-producto con controles de incremento/decremento y tope de existencias disponibles.
+   - Cálculo automático en tiempo real de Subtotal neto, IGV (18%) y Total.
+   - Registro atómico de ventas con prevención de sobreventa (*concurrency token*).
 
-Aplicar permisos en cada endpoint. Los cambios de precio, stock y anulación deben quedar auditados.
+2. **Gestión de Órdenes de Compra y Recepción Física:**
+   - Modal interactivo para emitir órdenes de compra a proveedores indicando producto, cantidad y costo unitario.
+   - Botón directo de **1 clic "📦 Recibir"** para ingresar mercadería física al almacén aumentando automáticamente las existencias.
 
-## Alcance del MVP
+3. **Anulación de Ventas y Reversa en Kardex:**
+   - Historial detallado de ventas con desglose de productos.
+   - Botón de **"Anular Venta"** para supervisores/administradores que revierte el stock e inserta un movimiento de *Reversa* en el Kardex.
 
-- Catálogo de productos con SKU único, descripción, unidad, precio, costo, stock mínimo y estado.
-- Clientes, proveedores y almacenes.
-- Órdenes de compra y recepción parcial/completa.
-- Registro de ventas con líneas, cantidades, precio aplicado y método de pago simulado.
-- Kardex de movimientos: compra, venta, transferencia, ajuste y reversa.
-- Alertas de stock bajo y reportes por periodo, producto y almacén.
-- Búsqueda, filtros y paginación.
+4. **Kardex Permanente de Movimientos:**
+   - Tabla cronológica de entradas (+), salidas (-) y reversas con actor responsable y referencia.
 
-No incluye facturación electrónica peruana ni procesamiento de pagos reales; esas integraciones quedan fuera del MVP.
+5. **Banner de Alerta de Reposición Crítica:**
+   - Notificación inteligente en la parte superior cuando cualquier referencia cae por debajo del stock mínimo.
 
-## Modelo de datos propuesto
+---
 
-- **Product:** SKU, nombre, unidad, costo, precio y stock mínimo.
-- **Warehouse:** código, nombre y ubicación descriptiva.
-- **InventoryBalance:** producto, almacén, cantidad disponible y versión de concurrencia.
-- **StockMovement:** tipo, cantidad positiva, referencia de origen, usuario, fecha y balance resultante.
-- **Supplier / Customer:** datos de contacto y estado.
-- **PurchaseOrder / PurchaseLine:** proveedor, estado, producto, cantidad y costo acordado.
-- **Sale / SaleLine:** cliente opcional, estado, subtotal, impuesto configurado, total y detalle de precio.
-- **AuditEvent:** actor, acción, entidad y fecha.
+## Arquitectura de Código
 
-El saldo visible debe poder reconstruirse desde el libro de movimientos; evitar editar existencias silenciosamente.
+```
+02-Inventario-Ventas/
+├── Domain/
+│   └── InventoryModels.cs           # DTOs de catálogo, carrito POS y ventas
+├── Services/
+│   └── InventoryManagementService.cs # Cálculo de IGV, totales y reglas de reorden
+├── Endpoints/
+│   └── InventoryEndpoints.cs        # Endpoints para compras detalladas y POS
+├── UI/
+│   ├── InventoryStyles.cs           # Estilos de almacén industrial y POS
+│   ├── InventoryLayout.cs           # Layout reactivo con pestañas y orquestador
+│   └── Components/
+│       ├── CreatePurchaseModal.cs   # Modal de órdenes de compra
+│       ├── PosCheckoutCart.cs       # Carrito de punto de venta reactivo
+│       ├── KardexDrawer.cs          # Lógica de recepción y anulación
+│       ├── LowStockAlerts.cs        # Banners de alerta de existencias
+│       └── ToastSystem.cs           # Notificaciones flotantes animadas
+└── Program.cs                       # Pipeline y servicios
+```
 
-## Páginas y API indicativa
+---
 
-Páginas: catálogo, ficha de producto, existencias por almacén, compras, recepción, nueva venta, historial de movimientos y reportes.
+## Verificación Funcional
 
-Endpoints candidatos: GET/POST /api/products; GET /api/inventory?warehouseId=; POST /api/purchases; POST /api/purchases/{id}/receive; POST /api/sales; POST /api/sales/{id}/cancel; GET /api/stock-movements.
-
-## Reglas de negocio
-
-- La venta debe reservar/descontar stock de manera atómica. Si no hay existencias, se rechaza sin guardar una venta parcial.
-- La recepción de compra genera movimientos positivos; una anulación genera movimientos compensatorios, no borra el historial.
-- No permitir cantidades cero o negativas, SKU repetido ni venta de un producto inactivo.
-- Usar transacciones SQL y control de concurrencia para evitar que dos ventas consuman el mismo stock.
-- Guardar el precio aplicado en la línea de venta para conservar el historial aunque luego cambie el catálogo.
-
-## Seguridad y calidad
-
-Autenticación y autorización por roles, validación del servidor, consultas paginadas, logging sin datos sensibles y registros de auditoría. Los cálculos de totales se validan en backend, no se confía en valores enviados por el navegador.
-
-## Criterios de aceptación
-
-El MVP se acepta cuando una compra aumenta existencias; una venta válida las reduce; una venta que excede stock no modifica ninguna tabla; cancelar una operación deja una reversa auditable; y los reportes concilian con los movimientos registrados.
-
-## Implementación local actual
-
-MVP disponible: ASP.NET Core + EF Core, panel interactivo y endpoints JSON descritos en el README raíz. El almacenamiento predeterminado es InMemory; SQL Server es configurable. La especificación de este documento sirve como alcance ampliado y backlog.
-
+Compilación limpia en .NET 10. Valida reversión por falta de stock y flujo transaccional mediante `Review-FunctionalFlows.ps1`.
